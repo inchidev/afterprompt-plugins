@@ -1,11 +1,11 @@
 {
   "name": "afterprompt",
   "displayName": "AfterPrompt",
-  "version": "0.1.6",
-  "description": "A tiny physics game pops up when your agent takes longer than a minute, and closes when it's done.",
+  "version": "0.1.7",
+  "description": "A small game appears while your coding agent works and signals when it is ready. Your game stays open.",
   "author": {
     "name": "inchi.dev"
   },
-  "homepage": "https://afterprompt.games/goo",
+  "homepage": "https://afterprompt.games",
   "hooks": "./hooks/hooks.json"
 }

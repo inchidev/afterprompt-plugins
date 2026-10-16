@@ -20,7 +20,7 @@
             "type": "command",
             "command": "sh \"${PLUGIN_ROOT}/scripts/afterprompt.sh\" hook stop --agent codex",
             "timeout": 10,
-            "statusMessage": "Closing AfterPrompt"
+            "statusMessage": "Agent ready — preserving your game"
           }
         ]
       }
@@ -32,7 +32,7 @@
             "type": "command",
             "command": "sh \"${PLUGIN_ROOT}/scripts/afterprompt.sh\" hook stop --agent codex",
             "timeout": 10,
-            "statusMessage": "Closing AfterPrompt"
+            "statusMessage": "Agent ready — preserving your game"
           }
         ]
       }
@@ -44,7 +44,7 @@
             "type": "command",
             "command": "sh \"${PLUGIN_ROOT}/scripts/afterprompt.sh\" hook stop --agent codex",
             "timeout": 3,
-            "statusMessage": "Closing AfterPrompt"
+            "statusMessage": "Agent ready — preserving your game"
           }
         ]
       }
@@ -56,7 +56,7 @@
             "type": "command",
             "command": "sh \"${PLUGIN_ROOT}/scripts/afterprompt.sh\" hook stop --agent codex",
             "timeout": 3,
-            "statusMessage": "Closing AfterPrompt"
+            "statusMessage": "Agent ready — preserving your game"
           }
         ]
       }

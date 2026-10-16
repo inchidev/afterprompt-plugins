@@ -8,8 +8,8 @@
     {
       "name": "afterprompt",
       "source": "./plugins/afterprompt",
-      "description": "A tiny physics game pops up when Claude takes longer than a minute, and closes when it's done.",
-      "version": "0.1.6"
+      "description": "Small games while your coding agent works, with a readiness signal that preserves your game.",
+      "version": "0.1.7"
     }
   ]
 }

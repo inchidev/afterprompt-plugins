@@ -1,25 +1,33 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "afterprompt",
-  "version": "0.1.6",
-  "description": "A tiny physics game pops up when your coding agent takes longer than a minute, and closes when it is done.",
+  "version": "0.1.7",
+  "description": "A small game appears while your coding agent works and signals when it is ready. Your game stays open.",
   "author": {
     "name": "inchi.dev",
     "url": "https://inchi.dev"
   },
   "homepage": "https://afterprompt.games",
   "license": "MIT",
-  "keywords": ["codex", "game", "focus", "waiting"],
+  "keywords": [
+    "codex",
+    "game",
+    "focus",
+    "waiting"
+  ],
   "extensions": {
     "com.openai": {
       "hooks": "./hooks/codex.json",
       "interface": {
         "displayName": "AfterPrompt",
         "shortDescription": "Tiny games while Codex works",
-        "longDescription": "Opens a small game after Codex has been working for a minute, then closes it when Codex finishes or needs you.",
+        "longDescription": "Opens a small game after Codex has been working for a minute, then signals when Codex finishes or needs you. Active games stay open.",
         "developerName": "inchi.dev",
         "category": "Productivity",
-        "capabilities": ["Run local lifecycle hooks", "Open a browser window"],
+        "capabilities": [
+          "Run local lifecycle hooks",
+          "Open the native app or a browser window"
+        ],
         "websiteURL": "https://afterprompt.games",
         "privacyPolicyURL": "https://afterprompt.games/privacy",
         "termsOfServiceURL": "https://afterprompt.games/terms",

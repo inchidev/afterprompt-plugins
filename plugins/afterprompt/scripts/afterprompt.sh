@@ -1,11 +1,10 @@
 #!/bin/sh
 # AfterPrompt — opens a tiny game window when your coding agent takes a while,
-# and closes it when the agent is done. Needs nothing beyond what macOS and
+# and signals when the agent is done, preserving the game. Needs nothing beyond what macOS and
 # Linux ship with: sh, curl, sed.
 #
 #   afterprompt.sh hook start   UserPromptSubmit: wait, then open the game window
 #   afterprompt.sh hook stop    Stop / permission prompt / SessionEnd: finish the session
-#   afterprompt.sh reap         (internal) quit the dedicated browser after completion
 #   afterprompt.sh open         open a practice window right now
 #
 # Commands accept `--game <id>` (default: goo). Hook commands also accept
@@ -54,7 +53,7 @@ json_string() {
 # One small key=value file per agent session.
 
 state_path() {
-  printf '%s/%s.state' "$RUNS" "$(printf '%s' "${1:-default}" | tr -c 'A-Za-z0-9_-' '_' | cut -c 1-80)"
+  printf '%s/%s.state' "$RUNS/$AGENT" "$(printf '%s' "${1:-default}" | tr -c 'A-Za-z0-9_-' '_' | cut -c 1-80)"
 }
 
 # state_get <file> <key>
@@ -66,7 +65,7 @@ state_get() {
 state_write() {
   file=$1
   shift
-  mkdir -p "$RUNS"
+  mkdir -p "$(dirname "$file")"
   printf '%s\n' "$@" >"$file.$$.tmp" && mv -f "$file.$$.tmp" "$file"
 }
 
@@ -144,7 +143,9 @@ open_window() {
     session=$(printf '%s' "$route" | sed -n 's/.*[?&]session=\([^&]*\).*/\1/p')
     case $slug in '' | *[!a-z0-9-]*) slug= ;; esac
     case $session in s_*) ;; *) session= ;; esac
-    if [ -n "$slug" ] && [ -n "$session" ] && /usr/bin/open "afterprompt://play/$slug?session=$session" >/dev/null 2>&1; then
+    native_url="afterprompt://play/$slug"
+    [ -n "$session" ] && native_url="$native_url?session=$session"
+    if [ -n "$slug" ] && /usr/bin/open "$native_url" >/dev/null 2>&1; then
       WINDOW_KIND=desktop
       log "opened AfterPrompt desktop app"
       return
@@ -167,15 +168,6 @@ open_window() {
   fi
   WINDOW_KIND=tab
   log "opened default browser tab"
-}
-
-# On macOS a Chromium app process can survive after its window closes. The
-# game polls every two seconds and closes five seconds after completion, so
-# give it time to render that state before quitting our dedicated profile.
-reap_after_completion() {
-  [ "$OS" = Darwin ] || return
-  sleep 10
-  pkill -f "user-data-dir=$PROFILE" 2>/dev/null
 }
 
 # ─── hooks ───────────────────────────────────────────────────────
@@ -216,15 +208,15 @@ hook_start() {
     return
   fi
   # Record the session before the window exists, so a Stop from here on always completes it.
-  state_write "$state" phase=open "prompt=$prompt" "session=$id" "token=$token"
+  state_write "$state" phase=open "prompt=$prompt" "session=$id" "token=$token" "agent=$AGENT"
   open_window "$play_url&popup=1"
   [ "$(state_get "$state" prompt)" = "$prompt" ] &&
-    state_write "$state" phase=open "prompt=$prompt" "session=$id" "token=$token" "window=$WINDOW_KIND"
+    state_write "$state" phase=open "prompt=$prompt" "session=$id" "token=$token" "agent=$AGENT" "window=$WINDOW_KIND"
 }
 
-# The agent stopped (or needs the user): finish the session so the window
-# closes. This hook runs synchronously so it survives `claude -p` exiting
-# right after; the slow tidy-up is handed to a detached process.
+# The agent stopped (or needs the user): finish the session and signal readiness. The game stays open.
+# This hook runs synchronously so it survives `claude -p` exiting
+# right after. Only an already running native app receives the readiness signal.
 hook_stop() {
   input=$1
   state=$(state_path "$(json_string "$input" session_id)")
@@ -232,12 +224,14 @@ hook_stop() {
   phase=$(state_get "$state" phase)
   id=$(state_get "$state" session)
   window=$(state_get "$state" window)
+  owner=$(state_get "$state" agent)
+  [ -n "$owner" ] || owner=$AGENT
   finish "$state"
   rm -f "$state"
   event=$(json_string "$input" hook_event_name)
   log "${event:-stop}: finished $phase session ${id:-(none)}"
-  if [ "$phase" = open ] && [ "$window" = app ] && [ "$OS" = Darwin ]; then
-    nohup sh "$SCRIPT" reap >/dev/null 2>&1 &
+  if [ "$phase" = open ] && [ "$window" = desktop ] && [ "$OS" = Darwin ] && pgrep -f '/AfterPrompt\.app/Contents/MacOS/afterprompt-desktop' >/dev/null 2>&1; then
+    /usr/bin/open -g "afterprompt://agent?session=$id&agent=$owner&status=ready" >/dev/null 2>&1 || true
   fi
 }
 
@@ -252,7 +246,6 @@ mkdir -p "$HOME_DIR" 2>/dev/null
 case "$COMMAND $SUB" in
   'hook start') hook_start "$(read_input)" 2>>"$LOG" ;;
   'hook stop' | 'hook end') hook_stop "$(read_input)" 2>>"$LOG" ;;
-  'reap ') reap_after_completion 2>>"$LOG" ;;
   'open '*)
     url=$(practice_url) || { log "game $GAME_ID not found"; exit 1; }
     open_window "$url"
