@@ -365,7 +365,7 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
       const version = versionFlag === undefined ? undefined : Number(versionFlag)
       if (version !== undefined && !(Number.isInteger(version) && version > 0)) throw new CliError('--version takes a version number.')
       const review = await submit(dirs[0], { env, version })
-      return flags.has('--json') ? print(review) : print(`Version ${review.version} is waiting for catalog review. \`afterprompt games\` shows the decision.`)
+      return flags.has('--json') ? print(review) : print(`Version ${review.version} is waiting for catalog review${review.fee ? ` (${review.fee} tokens held until approval)` : ''}. \`afterprompt games\` shows the decision.`)
     }
     case undefined: case 'help': case '--help': case '-h':
       return print(USAGE)
