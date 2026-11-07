@@ -5,7 +5,8 @@
 //   afterprompt login               sign in through the browser (OAuth, PKCE, loopback redirect)
 //   afterprompt login --device      sign in from another device with a short code (RFC 8628); the default over SSH
 //   afterprompt publish <dir>       publish <dir>/afterprompt.json and its files as a new version
-//   afterprompt games               list your games
+//   afterprompt submit <dir>        send the live version of <dir>'s game to catalog review
+//   afterprompt games               list your games, their catalog versions and reviews
 //   afterprompt logout              forget the stored sign-in
 //
 // Environment: AFTERPROMPT_URL (default https://afterprompt.games), AFTERPROMPT_TOKEN (an access token to use
@@ -39,6 +40,7 @@ const base64url = bytes => Buffer.from(bytes).toString('base64url')
 export function pathProblem(path) {
   if (path.length > 240) return 'the path is longer than 240 characters'
   const segments = path.split('/')
+  if (segments[0].toLowerCase() === '__afterprompt') return '__afterprompt/ is reserved for the AfterPrompt SDK'
   if (segments.length > 12) return 'the path is nested deeper than 12 folders'
   const bad = segments.find(segment => !SEGMENT.test(segment))
   if (bad !== undefined) return `"${bad}" may hold only letters, digits, ".", "_" and "-", and must not start with "." or "-"`
@@ -301,14 +303,32 @@ export async function publish(dir, { env = process.env, log = console.error, cre
   return { id: gameId, version: declared.version, files: pkg.files.length, totalBytes: pkg.totalBytes, uploaded: declared.missing.length, uploadedBytes, playUrl: finalized.playUrl, origin: finalized.origin }
 }
 
+/** Sends a version of the folder's game (the live one by default) to the catalog review queue. */
+export async function submit(dir, { env = process.env, version } = {}) {
+  const base = baseUrl(env)
+  const id = (await readJson(statePath(resolve(dir))))?.[base]?.id
+  if (!id) throw new CliError(`${dir} has no published game on ${base} yet. Run \`afterprompt publish ${dir}\` first.`)
+  return api(env, `/api/studio/games/${id}/versions/${version ?? 'latest'}/submit`, { method: 'POST' })
+}
+
+function describeGame(game) {
+  const review = game.review && game.review.state !== 'approved' && game.review.state !== 'withdrawn'
+    ? `review v${game.review.version}: ${game.review.state}${game.review.reason ? ` (${game.review.reason})` : ''}`
+    : ''
+  return [game.id, `v${game.liveVersion ?? '-'}`, game.catalogVersion ? `catalog v${game.catalogVersion}` : 'not in catalog', review, game.title, game.playUrl].filter(Boolean).join('  ')
+}
+
 // ---- command line ----
 
 const USAGE = `Usage:
   afterprompt login [--device|--browser] [--no-browser]
                                        sign in; --device shows a code to approve on any device
                                        (the default over SSH or without a display)
-  afterprompt publish <dir> [--new] [--json]
-                                       publish <dir> as a new version; --new creates another game
+  afterprompt publish <dir> [--new] [--submit] [--json]
+                                       publish <dir> as a new version; --new creates another game;
+                                       --submit also sends it to catalog review
+  afterprompt submit <dir> [--version N] [--json]
+                                       send the live (or given) version to catalog review
   afterprompt games [--json]           list your games
   afterprompt logout                   forget the stored sign-in
 
@@ -327,14 +347,25 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
       return console.error(`Signed out of ${baseUrl(env)}.`)
     case 'games': {
       const { games } = await api(env, '/api/studio/games')
-      return print(flags.has('--json') ? games : games.length ? games.map(game => `${game.id}  v${game.liveVersion ?? '-'}  ${game.title}  ${game.playUrl}`).join('\n') : 'No games yet.')
+      return print(flags.has('--json') ? games : games.length ? games.map(describeGame).join('\n') : 'No games yet.')
     }
     case 'publish': {
-      if (args.length !== 1) throw new CliError('Usage: afterprompt publish <dir> [--new] [--json]')
+      if (args.length !== 1) throw new CliError('Usage: afterprompt publish <dir> [--new] [--submit] [--json]')
       const result = await publish(args[0], { env, createNew: flags.has('--new') })
+      if (flags.has('--submit')) result.review = await submit(args[0], { env, version: result.version })
       if (flags.has('--json')) return print(result)
       console.error(`Published version ${result.version}: ${result.files} files, ${(result.totalBytes / 1024).toFixed(0)} KB, ${result.uploaded} uploaded.`)
+      if (result.review) console.error(`Version ${result.version} is waiting for catalog review.`)
       return print(result.playUrl)
+    }
+    case 'submit': {
+      const versionFlag = rest.find(arg => arg.startsWith('--version='))?.slice(10) ?? (rest.includes('--version') ? rest[rest.indexOf('--version') + 1] : undefined)
+      const dirs = args.filter(arg => arg !== versionFlag)
+      if (dirs.length !== 1) throw new CliError('Usage: afterprompt submit <dir> [--version N] [--json]')
+      const version = versionFlag === undefined ? undefined : Number(versionFlag)
+      if (version !== undefined && !(Number.isInteger(version) && version > 0)) throw new CliError('--version takes a version number.')
+      const review = await submit(dirs[0], { env, version })
+      return flags.has('--json') ? print(review) : print(`Version ${review.version} is waiting for catalog review. \`afterprompt games\` shows the decision.`)
     }
     case undefined: case 'help': case '--help': case '-h':
       return print(USAGE)
