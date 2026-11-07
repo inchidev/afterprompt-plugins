@@ -47,6 +47,17 @@ State lives in `~/.afterprompt/`: one small file per agent and session, a log, a
 
 **Privacy:** only the selected game ID, agent name (`claude` or `codex`), and timestamps are sent to `afterprompt.games`. Prompts, code, file paths, and transcripts never leave your machine.
 
+## Publish a game
+
+The plugin also carries a small CLI that publishes a web game folder to AfterPrompt and prints a link anyone can play. Ask your agent to "publish this game to AfterPrompt", or run it yourself (Node 20 or newer):
+
+```
+node plugins/afterprompt/scripts/afterprompt.mjs login
+node plugins/afterprompt/scripts/afterprompt.mjs publish ./my-game
+```
+
+The folder needs `index.html` and an `afterprompt.json` manifest. `login` signs you in with a token that can only create, publish and list your games: in this machine's browser, or with `--device` (the default over SSH) by approving a short code on any device. See the publishing guide in `docs/PUBLISHING_GAMES.md` of the AfterPrompt repository, or the `afterprompt-publish` skill in this plugin.
+
 ## Settings
 
 Set these environment variables, for example in the `env` block of `~/.claude/settings.json`, or in your shell profile for Codex:

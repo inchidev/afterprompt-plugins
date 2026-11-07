@@ -1,7 +1,7 @@
 {
   "name": "afterprompt",
   "displayName": "AfterPrompt",
-  "version": "0.1.7",
+  "version": "0.2.0",
   "description": "A small game appears while your coding agent works and signals when it is ready. Your game stays open.",
   "author": {
     "name": "inchi.dev"
