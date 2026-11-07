@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "afterprompt",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "A small game appears while your coding agent works and signals when it is ready. Your game stays open.",
   "author": {
     "name": "inchi.dev",

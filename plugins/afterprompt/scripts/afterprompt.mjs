@@ -5,6 +5,8 @@
 //   afterprompt login               sign in through the browser (OAuth, PKCE, loopback redirect)
 //   afterprompt login --device      sign in from another device with a short code (RFC 8628); the default over SSH
 //   afterprompt publish <dir>       publish <dir>/afterprompt.json and its files as a new version
+//   afterprompt page <dir>          upload <dir>/afterprompt.page.json (descriptions, screenshots) as the game page
+//   afterprompt screenshots <dir>   let AfterPrompt take screenshots of the live version for the page
 //   afterprompt submit <dir>        send the live version of <dir>'s game to catalog review
 //   afterprompt games               list your games, their catalog versions and reviews
 //   afterprompt logout              forget the stored sign-in
@@ -21,6 +23,9 @@ import { join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 export const PACKAGE_FORMAT = 'afterprompt-package@1'
+/** The game page, next to the manifest: descriptions and screenshot paths; it never ships in the package. */
+export const PAGE_FILE = 'afterprompt.page.json'
+const IMAGE_TYPES = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp' }
 export const SCOPE = 'openid offline_access afterprompt:games'
 export const DEVICE_GRANT = 'urn:ietf:params:oauth:grant-type:device_code'
 const LIMITS = { fileBytes: 25 * 1024 * 1024, packageBytes: 100 * 1024 * 1024, files: 2000 }
@@ -68,7 +73,7 @@ export async function collectPackage(dir) {
       const absolute = join(folder, entry.name)
       const path = relative(root, absolute).split(sep).join('/')
       if (entry.isDirectory()) { await walk(absolute); continue }
-      if (!entry.isFile() || path === 'afterprompt.json') continue
+      if (!entry.isFile() || path === 'afterprompt.json' || path === PAGE_FILE) continue
       const problem = pathProblem(path)
       if (problem === 'this file type is not served') { skipped.push(path); continue }
       if (problem) { refused.push(`${path}: ${problem}`); continue }
@@ -318,6 +323,34 @@ function describeGame(game) {
   return [game.id, `v${game.liveVersion ?? '-'}`, game.catalogVersion ? `catalog v${game.catalogVersion}` : 'not in catalog', review, game.title, game.playUrl].filter(Boolean).join('  ')
 }
 
+/**
+ * Uploads `<dir>/afterprompt.page.json` as the game page: `short` and `description` ({ en, ru? }) and `screenshots`,
+ * paths to PNG, JPEG or WebP files relative to the folder. Answers undefined when the folder has no page file.
+ */
+export async function syncPage(dir, { env = process.env } = {}) {
+  const root = resolve(dir)
+  const page = await readJson(join(root, PAGE_FILE)).catch(error => { throw new CliError(`${PAGE_FILE} is not valid JSON: ${error.message}`) })
+  if (!page) return undefined
+  const id = (await readJson(statePath(root)))?.[baseUrl(env)]?.id
+  if (!id) throw new CliError(`${dir} has no published game on ${baseUrl(env)} yet. Run \`afterprompt publish ${dir}\` first.`)
+  const text = value => typeof value === 'string' ? { en: value } : value ?? { en: '' }
+  const screenshots = []
+  for (const path of page.screenshots ?? []) {
+    const type = IMAGE_TYPES[String(path).split('.').pop().toLowerCase()]
+    if (!type) throw new CliError(`${path}: screenshots are PNG, JPEG or WebP.`)
+    const uploaded = await api(env, `/api/studio/games/${id}/media`, { method: 'PUT', headers: { 'content-type': type }, body: await readFile(resolve(root, path)) })
+    screenshots.push({ sha256: uploaded.sha256 })
+  }
+  return api(env, `/api/studio/games/${id}/page`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ short: text(page.short), description: text(page.description), ...(page.screenshots ? { screenshots } : {}) }) })
+}
+
+/** Asks AfterPrompt to take screenshots of the live version in Browser Run and add them to the page. */
+export async function captureScreenshots(dir, { env = process.env } = {}) {
+  const id = (await readJson(statePath(resolve(dir))))?.[baseUrl(env)]?.id
+  if (!id) throw new CliError(`${dir} has no published game on ${baseUrl(env)} yet. Run \`afterprompt publish ${dir}\` first.`)
+  return api(env, `/api/studio/games/${id}/screenshots`, { method: 'POST' })
+}
+
 // ---- command line ----
 
 const USAGE = `Usage:
@@ -327,6 +360,9 @@ const USAGE = `Usage:
   afterprompt publish <dir> [--new] [--submit] [--json]
                                        publish <dir> as a new version; --new creates another game;
                                        --submit also sends it to catalog review
+  afterprompt page <dir> [--json]      upload afterprompt.page.json (descriptions, screenshots) as the game page
+  afterprompt screenshots <dir> [--json]
+                                       let AfterPrompt take screenshots of the game for its page
   afterprompt submit <dir> [--version N] [--json]
                                        send the live (or given) version to catalog review
   afterprompt games [--json]           list your games
@@ -352,11 +388,26 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
     case 'publish': {
       if (args.length !== 1) throw new CliError('Usage: afterprompt publish <dir> [--new] [--submit] [--json]')
       const result = await publish(args[0], { env, createNew: flags.has('--new') })
+      result.page = await syncPage(args[0], { env })
       if (flags.has('--submit')) result.review = await submit(args[0], { env, version: result.version })
       if (flags.has('--json')) return print(result)
       console.error(`Published version ${result.version}: ${result.files} files, ${(result.totalBytes / 1024).toFixed(0)} KB, ${result.uploaded} uploaded.`)
+      if (result.page) console.error(`Game page updated: ${result.page.pageUrl}`)
       if (result.review) console.error(`Version ${result.version} is waiting for catalog review.`)
       return print(result.playUrl)
+    }
+    case 'page': {
+      if (args.length !== 1) throw new CliError('Usage: afterprompt page <dir> [--json]')
+      const page = await syncPage(args[0], { env })
+      if (!page) throw new CliError(`${join(args[0], PAGE_FILE)} is missing. It holds { "short": { "en": "…" }, "description": { "en": "…" }, "screenshots": ["shots/1.png"] }.`)
+      return flags.has('--json') ? print(page) : print(`Game page updated (${page.draft.screenshots.length} screenshots): ${page.pageUrl}`)
+    }
+    case 'screenshots': {
+      if (args.length !== 1) throw new CliError('Usage: afterprompt screenshots <dir> [--json]')
+      const result = await captureScreenshots(args[0], { env })
+      if (flags.has('--json')) return print(result)
+      if (result.problems?.length) console.error(`The browser noticed: ${result.problems.join(' ')}`)
+      return print(`Added ${result.screenshots.length} screenshot(s) to the game page: ${result.pageUrl}`)
     }
     case 'submit': {
       const versionFlag = rest.find(arg => arg.startsWith('--version='))?.slice(10) ?? (rest.includes('--version') ? rest[rest.indexOf('--version') + 1] : undefined)
